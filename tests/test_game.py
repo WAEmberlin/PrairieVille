@@ -9,7 +9,7 @@ from game.systems.farm_manager import FarmManager
 from game.systems.economy import EconomyManager
 from game.core.events import EventBus
 from game.core.config_loader import ConfigLoader
-from game.core.isometric import get_farm_offset, grid_to_screen
+from game.core.isometric import get_farm_offset, grid_to_screen, screen_to_grid, tile_center_screen, point_in_tile
 from game.core.constants import SCREEN_WIDTH, SCREEN_HEIGHT, TILE_WIDTH, TILE_HEIGHT
 from game.core.constants import TOP_BAR_HEIGHT, BOTTOM_BAR_HEIGHT, SIDEBAR_WIDTH
 
@@ -72,7 +72,7 @@ class TestFarmPlot:
         plot = FarmPlot(0, 0)
         plot.till()
         plot.plant("soybeans")
-        plot.crop.planted_at = __import__("time").time() - 89
+        plot.crop.planted_at = __import__("time").time() - 93
         assert plot.is_harvestable(1.3)
         assert not plot.is_harvestable(1.0)
         crop_id = plot.harvest(1.3)
@@ -81,6 +81,17 @@ class TestFarmPlot:
     def test_crop_stages(self):
         crop = CropInstance(crop_id="wheat", planted_at=time.time() - 15)
         assert crop.get_current_stage() >= 1
+        assert not crop.is_ready()
+
+    def test_crop_ready_at_full_growth(self):
+        crop = CropInstance(crop_id="wheat", planted_at=time.time() - 30)
+        assert crop.is_ready()
+        assert crop.get_current_stage() == 4
+
+    def test_crop_not_ready_at_three_quarters(self):
+        crop = CropInstance(crop_id="wheat", planted_at=time.time() - 22)
+        assert not crop.is_ready()
+        assert crop.get_current_stage() == 3
 
 
 class TestFarmManager:
@@ -175,3 +186,20 @@ class TestFarmOffset:
         farm_bottom = bottom_sy + TILE_HEIGHT
         farm_center_y = (top_sy + farm_bottom) / 2
         assert abs(farm_center_y - play_center_y) < TILE_HEIGHT
+
+
+class TestIsometricPicking:
+    def test_tile_center_round_trip(self):
+        ox, oy = 200.0, 100.0
+        for gx, gy in ((0, 0), (3, 2), (5, 5), (2, 7)):
+            cx, cy = tile_center_screen(gx, gy, ox, oy)
+            picked_gx, picked_gy = screen_to_grid(cx, cy, ox, oy)
+            assert (picked_gx, picked_gy) == (gx, gy)
+
+    def test_point_in_tile_accepts_full_diamond(self):
+        ox, oy = 200.0, 100.0
+        cx, cy = tile_center_screen(2, 2, ox, oy)
+        assert point_in_tile(cx, cy, 2, 2, ox, oy)
+        assert point_in_tile(cx + TILE_WIDTH / 4, cy, 2, 2, ox, oy)
+        assert point_in_tile(cx - TILE_WIDTH / 4, cy, 2, 2, ox, oy)
+        assert not point_in_tile(cx + TILE_WIDTH, cy, 2, 2, ox, oy)

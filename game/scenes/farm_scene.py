@@ -8,7 +8,7 @@ from game.core.constants import (
     TOOL_HARVEST, TOOL_BUILD, TOOL_DECORATE, TOOL_FEED,
     PLOT_GRASS, PLOT_TILLED, PLOT_CROP, PLOT_BUILDING, PLOT_DECORATION,
 )
-from game.core.isometric import grid_to_screen, screen_to_grid, get_farm_offset
+from game.core.isometric import grid_to_screen, screen_to_grid, get_farm_offset, tile_center_screen
 from game.core.config_loader import ConfigLoader
 from game.entities.player import Player
 from game.systems.farm_manager import FarmManager
@@ -120,12 +120,16 @@ class FarmScene:
 
     def _on_tool_selected(self, tool: str):
         self.current_tool = tool
+        if tool == TOOL_CURSOR:
+            self._show_message("Hand: inspect tiles, harvest ready crops, place animals")
         if tool != TOOL_PLANT:
             self.selected_crop = None
         if tool != TOOL_BUILD:
             self.selected_building = None
         if tool != TOOL_DECORATE:
             self.selected_decoration = None
+        if tool != TOOL_CURSOR:
+            self.selected_animal = None
 
     def _on_shop_item_selected(self, tab: str, item_id: str):
         if tab == "crops":
@@ -146,8 +150,9 @@ class FarmScene:
             animal = ConfigLoader.get_animal(item_id)
             if animal:
                 self.selected_animal = item_id
-                self.current_tool = TOOL_FEED
-                self._show_message(f"Selected {animal['name']} - click empty plot to place")
+                self.current_tool = TOOL_CURSOR
+                self.toolbar.current_tool = TOOL_CURSOR
+                self._show_message(f"Selected {animal['name']} — click a tile with Hand to place")
             else:
                 self.selected_decoration = item_id
                 self.current_tool = TOOL_DECORATE
@@ -200,28 +205,78 @@ class FarmScene:
 
     def _try_harvest(self, plot) -> bool:
         growth = self.weather_mgr.growth_multiplier
-        if plot.is_harvestable(growth):
-            crop_id = plot.harvest(growth)
-            if crop_id:
-                value = self.economy.harvest_crop(crop_id)
-                self.assets.play_sound("harvesting")
-                self._show_message(f"Harvested! Sell in inventory for ${value}")
-                return True
-        elif plot.crop and plot.crop.is_withered(growth):
-            plot.clear()
-            self._show_message("Crop withered - cleared")
+        if not plot.is_harvestable(growth):
+            if plot.crop:
+                cfg = plot.crop.config
+                name = cfg["name"] if cfg else "Crop"
+                progress = int(plot.crop.get_growth_progress(growth) * 100)
+                stage = plot.crop.get_current_stage(growth)
+                total = cfg["stages"] if cfg else 4
+                self._show_message(f"{name} growing... {progress}% (stage {stage}/{total})")
+            return False
+        crop_id = plot.harvest(growth)
+        if crop_id:
+            value = self.economy.harvest_crop(crop_id)
+            self.assets.play_sound("harvesting")
+            self._show_message(f"Harvested! Sell in inventory for ${value}")
             return True
-        elif plot.crop:
-            stage = plot.crop.get_current_stage(growth)
+        return False
+
+    def _handle_hand_tool(self, plot, gx: int, gy: int):
+        """Hand tool: harvest ready crops, place animals, or inspect tiles."""
+        if self.selected_animal:
+            cfg = ConfigLoader.get_animal(self.selected_animal)
+            if cfg and cfg.get("pasture_required"):
+                pasture = self.farm.get_building_at(gx, gy)
+                if not pasture or pasture.building_id != cfg["pasture_required"]:
+                    self._show_message("Place bison inside a bison pasture")
+                    return
+            if plot.crop or plot.building_id or plot.decoration_id:
+                self._show_message("Need an empty grass tile for animals")
+                return
+            if self.economy.buy_animal(self.selected_animal):
+                self.farm.add_animal(self.selected_animal, float(gx), float(gy))
+                if self.selected_animal == "bison":
+                    self.quest_mgr.on_bison_added()
+                self._show_message(f"Added {self.selected_animal}!")
+                self.selected_animal = None
+            else:
+                self._show_message("Not enough coins!")
+            return
+
+        if self._try_harvest(plot):
+            return
+
+        growth = self.weather_mgr.growth_multiplier
+        if plot.crop:
             cfg = plot.crop.config
             name = cfg["name"] if cfg else "Crop"
             progress = int(plot.crop.get_growth_progress(growth) * 100)
-            if plot.crop.is_ready(growth):
-                self._show_message(f"{name} ready — use Harvest tool!")
+            stage = plot.crop.get_current_stage(growth)
+            total = cfg["stages"] if cfg else 4
+            if plot.is_harvestable(growth):
+                self._show_message(f"{name} is ready to harvest!")
             else:
-                self._show_message(f"{name} growing... {progress}% (stage {stage})")
-            return True
-        return False
+                self._show_message(f"{name}: {progress}% grown (stage {stage}/{total})")
+            return
+
+        building = self.farm.get_building_at(gx, gy)
+        if building:
+            cfg = building.config
+            self._show_message(cfg["name"] if cfg else building.building_id)
+            return
+
+        if plot.decoration_id:
+            name = plot.decoration_id.replace("_", " ").title()
+            self._show_message(f"Decoration: {name}")
+            return
+
+        hints = {
+            PLOT_GRASS: "Grass — use Till to prepare soil",
+            PLOT_TILLED: "Tilled soil — select a seed and plant",
+            PLOT_DIRT: "Dirt — use Till to prepare soil",
+        }
+        self._show_message(hints.get(plot.state, "Empty plot"))
 
     def _handle_farm_click(self, pos: tuple[int, int]):
         gx, gy = screen_to_grid(pos[0], pos[1], self.offset_x, self.offset_y)
@@ -261,7 +316,7 @@ class FarmScene:
 
         elif tool == TOOL_HARVEST:
             if not self._try_harvest(plot):
-                self._show_message("Nothing to harvest here")
+                self._show_message("Nothing ready to harvest here")
 
         elif tool == TOOL_BUILD:
             if not self.selected_building:
@@ -269,11 +324,14 @@ class FarmScene:
                 return
             if self.economy.buy_building(self.selected_building):
                 if self.farm.place_building(self.selected_building, gx, gy):
+                    self.player.owned_buildings.append(self.selected_building)
                     self.assets.play_sound("coins")
                     self._show_message(f"Built {self.selected_building}!")
                 else:
+                    cost = ConfigLoader.get_building(self.selected_building)["cost"]
+                    self.player.add_coins(cost)
+                    self.player.stats["buildings_built"] -= 1
                     self._show_message("Can't place building here")
-                    self.player.add_coins(ConfigLoader.get_building(self.selected_building)["cost"])
             else:
                 self._show_message("Not enough coins!")
 
@@ -310,34 +368,7 @@ class FarmScene:
             self._show_message("No animals nearby")
 
         elif tool == TOOL_CURSOR:
-            if plot.is_harvestable(self.weather_mgr.growth_multiplier):
-                self._try_harvest(plot)
-                return
-            if self.selected_animal:
-                cfg = ConfigLoader.get_animal(self.selected_animal)
-                if cfg and cfg.get("pasture_required"):
-                    pasture = self.farm.get_building_at(gx, gy)
-                    if not pasture or pasture.building_id != cfg["pasture_required"]:
-                        self._show_message("Place bison inside a bison pasture")
-                        return
-                if self.economy.buy_animal(self.selected_animal):
-                    animal = self.farm.add_animal(self.selected_animal, float(gx), float(gy))
-                    if self.selected_animal == "bison":
-                        self.quest_mgr.on_bison_added()
-                    self._show_message(f"Added {self.selected_animal}!")
-                    self.selected_animal = None
-                else:
-                    self._show_message("Not enough coins!")
-                return
-            if plot.crop:
-                stage = plot.crop.get_current_stage(self.weather_mgr.growth_multiplier)
-                cfg = plot.crop.config
-                name = cfg["name"] if cfg else "Crop"
-                if plot.is_harvestable(self.weather_mgr.growth_multiplier):
-                    self._show_message(f"{name} ready to harvest!")
-                else:
-                    progress = int(plot.crop.get_growth_progress(self.weather_mgr.growth_multiplier) * 100)
-                    self._show_message(f"{name}: {progress}% grown")
+            self._handle_hand_tool(plot, gx, gy)
 
     def handle_event(self, event: pygame.event.Event):
         if self.confirm_dialog.visible and self.confirm_dialog.handle_event(event):
@@ -357,7 +388,10 @@ class FarmScene:
                 self._handle_farm_click(pos)
 
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1:
+            if event.key == pygame.K_0:
+                self._on_tool_selected(TOOL_CURSOR)
+                self.toolbar.current_tool = TOOL_CURSOR
+            elif event.key == pygame.K_1:
                 self._on_tool_selected(TOOL_TILL)
                 self.toolbar.current_tool = TOOL_TILL
             elif event.key == pygame.K_2:
@@ -405,8 +439,6 @@ class FarmScene:
         # Crop
         if plot.crop:
             stage = plot.crop.get_current_stage(self.weather_mgr.growth_multiplier)
-            if plot.crop.withered:
-                stage = 0
             crop_sprite = self.assets.get_crop_sprite(plot.crop.crop_id, min(stage, 4))
             crop_rect = crop_sprite.get_rect(centerx=int(sx + TILE_WIDTH // 2),
                                               bottom=int(sy + TILE_HEIGHT // 2))
@@ -468,11 +500,10 @@ class FarmScene:
                 TOP_BAR_HEIGHT <= mouse_pos[1] <= SCREEN_HEIGHT - BOTTOM_BAR_HEIGHT):
             gx, gy = screen_to_grid(mouse_pos[0], mouse_pos[1], self.offset_x, self.offset_y)
             if self.farm.in_bounds(gx, gy):
-                sx, sy = grid_to_screen(gx, gy, self.offset_x, self.offset_y)
+                cx, cy = tile_center_screen(gx, gy, self.offset_x, self.offset_y)
                 highlight = pygame.Surface((TILE_WIDTH, TILE_HEIGHT), pygame.SRCALPHA)
                 highlight.fill((255, 255, 255, 40))
-                hl_rect = highlight.get_rect(centerx=int(sx + TILE_WIDTH // 2),
-                                              bottom=int(sy + TILE_HEIGHT))
+                hl_rect = highlight.get_rect(centerx=int(cx), centery=int(cy))
                 screen.blit(highlight, hl_rect)
 
         self.confirm_dialog.draw(screen, self.font)

@@ -95,7 +95,6 @@ class EconomyManager:
             return False
         if not self.player.spend_coins(cfg["cost"]):
             return False
-        self.player.owned_buildings.append(building_id)
         self.player.stats["buildings_built"] += 1
         self.player.add_xp(20)
         self.events.emit(EVT_BUILDING_PLACED, building_id=building_id)

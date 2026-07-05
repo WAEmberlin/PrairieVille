@@ -95,11 +95,6 @@ class FarmManager:
         return None
 
     def update(self, dt: float, growth_multiplier: float = 1.0):
-        for crop_plot in self.plots.values():
-            if crop_plot.crop:
-                if crop_plot.crop.is_withered(growth_multiplier):
-                    crop_plot.crop.withered = True
-
         for animal in self.animals:
             if animal.config and animal.config.get("wander"):
                 pasture = next(
