@@ -1,0 +1,40 @@
+{
+  "animals": [
+    {
+      "id": "bison",
+      "name": "Bison",
+      "cost": 150,
+      "feed_cost": 5,
+      "feed_interval_seconds": 60,
+      "product": "bison_fur",
+      "product_value": 25,
+      "product_interval_seconds": 90,
+      "pasture_required": "bison_pasture",
+      "wander": true
+    },
+    {
+      "id": "cattle",
+      "name": "Cattle",
+      "cost": 100,
+      "feed_cost": 3,
+      "feed_interval_seconds": 45,
+      "product": "milk",
+      "product_value": 15,
+      "product_interval_seconds": 60,
+      "pasture_required": null,
+      "wander": false
+    },
+    {
+      "id": "chicken",
+      "name": "Chicken",
+      "cost": 50,
+      "feed_cost": 2,
+      "feed_interval_seconds": 30,
+      "product": "eggs",
+      "product_value": 8,
+      "product_interval_seconds": 45,
+      "pasture_required": null,
+      "wander": false
+    }
+  ]
+}
