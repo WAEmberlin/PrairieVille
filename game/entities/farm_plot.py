@@ -1,7 +1,7 @@
 """Farm plot and crop entities."""
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from game.core.constants import PLOT_GRASS, PLOT_DIRT, PLOT_TILLED, PLOT_CROP
 from game.core.config_loader import ConfigLoader
@@ -13,7 +13,6 @@ class CropInstance:
     crop_id: str
     planted_at: float
     stage: int = 0
-    withered: bool = False
 
     @property
     def config(self) -> dict | None:
@@ -21,46 +20,30 @@ class CropInstance:
 
     def get_growth_progress(self, growth_multiplier: float = 1.0) -> float:
         cfg = self.config
-        if not cfg or self.withered:
+        if not cfg:
             return 0.0
         elapsed = time.time() - self.planted_at
         growth_time = cfg["growth_seconds"] / growth_multiplier
         return min(1.0, elapsed / growth_time)
 
     def get_current_stage(self, growth_multiplier: float = 1.0) -> int:
-        if self.withered:
-            return 0
         progress = self.get_growth_progress(growth_multiplier)
         cfg = self.config
         if not cfg:
             return 0
         stages = cfg["stages"]
         if progress >= 1.0:
-            return stages  # ready to harvest
-        return max(1, int(progress * stages) + 1)
+            return stages
+        return max(1, min(stages - 1, int(progress * (stages - 1)) + 1))
 
     def is_ready(self, growth_multiplier: float = 1.0) -> bool:
-        return self.get_current_stage(growth_multiplier) >= (self.config or {}).get("stages", 4)
-
-    def is_withered(self, growth_multiplier: float = 1.0) -> bool:
-        if self.withered:
-            return True
-        cfg = self.config
-        if not cfg:
-            return False
-        if not self.is_ready(growth_multiplier):
-            return False
-        elapsed = time.time() - self.planted_at
-        growth_time = cfg["growth_seconds"] / growth_multiplier
-        wither_time = cfg.get("wither_seconds", 120)
-        return elapsed > growth_time + wither_time
+        return self.get_growth_progress(growth_multiplier) >= 1.0
 
     def to_dict(self) -> dict:
         return {
             "crop_id": self.crop_id,
             "planted_at": self.planted_at,
             "stage": self.stage,
-            "withered": self.withered,
         }
 
     @classmethod
@@ -69,7 +52,6 @@ class CropInstance:
             crop_id=data["crop_id"],
             planted_at=data["planted_at"],
             stage=data.get("stage", 0),
-            withered=data.get("withered", False),
         )
 
 
@@ -91,17 +73,12 @@ class FarmPlot:
         return self.state == PLOT_TILLED and self.crop is None and not self.building_id
 
     def is_harvestable(self, growth_multiplier: float = 1.0) -> bool:
-        return (
-            self.crop is not None
-            and self.crop.is_ready(growth_multiplier)
-            and not self.crop.is_withered(growth_multiplier)
-        )
+        return self.crop is not None and self.crop.is_ready(growth_multiplier)
 
     def is_clearable(self) -> bool:
         return self.state != PLOT_GRASS or self.crop is not None or self.decoration_id is not None
 
     def clear_requires_confirmation(self) -> bool:
-        """True when clearing would destroy a crop or decoration."""
         return self.crop is not None or self.decoration_id is not None
 
     def till(self):
