@@ -1,0 +1,44 @@
+{
+  "buildings": [
+    {
+      "id": "farmhouse",
+      "name": "Farmhouse",
+      "cost": 500,
+      "width": 2,
+      "height": 2,
+      "description": "Your cozy Kansas home on the prairie."
+    },
+    {
+      "id": "barn",
+      "name": "Barn",
+      "cost": 800,
+      "width": 3,
+      "height": 2,
+      "description": "Store hay and equipment."
+    },
+    {
+      "id": "silo",
+      "name": "Grain Silo",
+      "cost": 600,
+      "width": 1,
+      "height": 2,
+      "description": "Store harvested grain."
+    },
+    {
+      "id": "windmill",
+      "name": "Windmill",
+      "cost": 400,
+      "width": 1,
+      "height": 1,
+      "description": "Classic prairie windmill."
+    },
+    {
+      "id": "bison_pasture",
+      "name": "Bison Pasture",
+      "cost": 1200,
+      "width": 3,
+      "height": 3,
+      "description": "Raise majestic prairie bison."
+    }
+  ]
+}

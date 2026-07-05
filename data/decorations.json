@@ -1,0 +1,17 @@
+{
+  "decorations": [
+    {"id": "fence", "name": "Fence", "cost": 15, "width": 1, "height": 1},
+    {"id": "tree", "name": "Prairie Tree", "cost": 25, "width": 1, "height": 1},
+    {"id": "wildflowers", "name": "Wildflowers", "cost": 10, "width": 1, "height": 1},
+    {"id": "hay_bale", "name": "Hay Bale", "cost": 20, "width": 1, "height": 1},
+    {"id": "bench", "name": "Bench", "cost": 35, "width": 1, "height": 1},
+    {"id": "bird_bath", "name": "Bird Bath", "cost": 40, "width": 1, "height": 1},
+    {"id": "prairie_rock", "name": "Prairie Rock", "cost": 12, "width": 1, "height": 1}
+  ],
+  "expansions": [
+    {"size": 10, "cost": 0, "label": "Starter Farm"},
+    {"size": 15, "cost": 500, "label": "Small Expansion"},
+    {"size": 20, "cost": 1500, "label": "Medium Expansion"},
+    {"size": 25, "cost": 3000, "label": "Large Expansion"}
+  ]
+}
